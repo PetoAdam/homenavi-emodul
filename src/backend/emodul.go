@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -203,6 +204,31 @@ func (c *EmodulClient) GetModuleData(ctx context.Context, session *EmodulSession
 		return nil, errors.New("missing module udid")
 	}
 	_, data, err := c.doJSON(ctx, http.MethodGet, fmt.Sprintf("/users/%d/modules/%s", session.UserID, moduleUDID), session, nil)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+func (c *EmodulClient) GetModuleUpdates(ctx context.Context, session *EmodulSession, moduleUDID, lastUpdate string) ([]byte, error) {
+	if session == nil || session.UserID == 0 || strings.TrimSpace(session.Token) == "" {
+		return nil, errors.New("missing session")
+	}
+	moduleUDID = strings.TrimSpace(moduleUDID)
+	if moduleUDID == "" {
+		return nil, errors.New("missing module udid")
+	}
+	lastUpdate = strings.TrimSpace(lastUpdate)
+	if lastUpdate == "" {
+		return c.GetModuleData(ctx, session, moduleUDID)
+	}
+	path := fmt.Sprintf(
+		"/users/%d/modules/%s/update/data/parents/[]/alarm_ids/[]/last_update/%s",
+		session.UserID,
+		moduleUDID,
+		url.PathEscape(lastUpdate),
+	)
+	_, data, err := c.doJSON(ctx, http.MethodGet, path, session, nil)
 	if err != nil {
 		return nil, err
 	}

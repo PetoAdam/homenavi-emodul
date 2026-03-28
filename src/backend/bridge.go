@@ -37,9 +37,10 @@ type EmodulDeviceBridge struct {
 	syncInterval time.Duration
 	syncNow      chan struct{}
 
-	mu      sync.Mutex
-	known   map[string]zoneBridgeRef
-	started bool
+	mu               sync.Mutex
+	known            map[string]zoneBridgeRef
+	moduleLastUpdate map[string]string
+	started          bool
 }
 
 type zoneBridgeRef struct {
@@ -77,12 +78,13 @@ type bridgeInput struct {
 
 func NewEmodulDeviceBridge(setup *SetupStore) *EmodulDeviceBridge {
 	return &EmodulDeviceBridge{
-		setup:        setup,
-		api:          &EmodulAPI{Setup: setup, Client: NewEmodulClient(nil)},
-		adapterID:    strings.TrimSpace(firstNonEmpty(os.Getenv("EMODUL_ADAPTER_ID"), "emodul-integration")),
-		syncInterval: emodulSyncInterval(),
-		syncNow:      make(chan struct{}, 1),
-		known:        map[string]zoneBridgeRef{},
+		setup:            setup,
+		api:              &EmodulAPI{Setup: setup, Client: NewEmodulClient(nil)},
+		adapterID:        strings.TrimSpace(firstNonEmpty(os.Getenv("EMODUL_ADAPTER_ID"), "emodul-integration")),
+		syncInterval:     emodulSyncInterval(),
+		syncNow:          make(chan struct{}, 1),
+		known:            map[string]zoneBridgeRef{},
+		moduleLastUpdate: map[string]string{},
 	}
 }
 
@@ -218,6 +220,7 @@ func (b *EmodulDeviceBridge) syncOnce(ctx context.Context, corrByDevice map[stri
 			slog.Warn("emodul module parse failed", "module_udid", moduleUDID, "error", err)
 			continue
 		}
+		b.storeModuleLastUpdate(moduleUDID, partial.LastUpdate)
 		for _, zone := range partial.Zones {
 			deviceID := emodulZoneDeviceID(moduleUDID, zone.Zone.ID)
 			current[deviceID] = zoneBridgeRef{ModuleUDID: moduleUDID, ZoneID: zone.Zone.ID}
@@ -295,6 +298,7 @@ func (b *EmodulDeviceBridge) publishZone(mod EmodulModule, zone ZoneElement, cor
 		"power":              emodulPowerState(zone),
 		"temperature":        tempTenthsToFloat(zone.Zone.CurrentTemperature),
 		"target_temperature": tempTenthsToFloat(zone.Zone.SetTemperature),
+		"during_change":      zone.IsDuringChange(),
 		"humidity":           intPtrToValue(zone.Zone.Humidity),
 		"relay":              strings.EqualFold(strings.TrimSpace(zone.Zone.Flags.RelayState), "on"),
 		"zone_state":         strings.TrimSpace(zone.Zone.ZoneState),
@@ -390,20 +394,26 @@ func (b *EmodulDeviceBridge) dispatchCommand(topic string, payload []byte) {
 	if corr == "" {
 		corr = fmt.Sprintf("emodul-%d", time.Now().UnixNano())
 	}
+	b.publishCommandResult(deviceID, corr, true, "accepted", "")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := b.applyCommand(ctx, deviceID, cmd.Command, cmd.Args, corr); err != nil {
 		slog.Warn("emodul command failed", "device_id", deviceID, "command", cmd.Command, "error", err)
-		b.publishCommandResult(deviceID, corr, false, "failed", err.Error())
+		status := "failed"
+		msg := strings.ToLower(strings.TrimSpace(err.Error()))
+		if strings.Contains(msg, "unsupported") || strings.Contains(msg, "invalid") || strings.Contains(msg, "missing") {
+			status = "rejected"
+		}
+		b.publishCommandResult(deviceID, corr, false, status, err.Error())
 		return
 	}
-	b.publishCommandResult(deviceID, corr, true, "applied", "")
 }
 
 func (b *EmodulDeviceBridge) applyCommand(ctx context.Context, deviceID, command string, args map[string]any, corr string) error {
 	command = strings.ToLower(strings.TrimSpace(command))
 	if command == "refresh" {
+		b.publishCommandResult(deviceID, corr, true, "in_progress", "")
 		b.requestSync()
 		return nil
 	}
@@ -441,7 +451,8 @@ func (b *EmodulDeviceBridge) applyCommand(ctx context.Context, deviceID, command
 	if !applied {
 		return errors.New("no supported state keys in command")
 	}
-	b.syncModule(ctx, moduleUDID, map[string]string{deviceID: corr})
+	b.publishCommandResult(deviceID, corr, true, "in_progress", "")
+	b.waitForZoneConfirmation(ctx, moduleUDID, zoneID, deviceID, corr, args)
 	return nil
 }
 
@@ -474,19 +485,201 @@ func (b *EmodulDeviceBridge) syncModule(ctx context.Context, moduleUDID string, 
 			b.requestSync()
 			return
 		}
-		for _, zone := range partial.Zones {
-			deviceID := emodulZoneDeviceID(moduleUDID, zone.Zone.ID)
-			b.publishZone(mod, zone, corrByDevice[deviceID])
-		}
+		b.storeModuleLastUpdate(moduleUDID, partial.LastUpdate)
+		b.publishModuleSnapshot(mod, partial, corrByDevice)
 		return
 	}
 	b.requestSync()
+}
+
+func (b *EmodulDeviceBridge) waitForZoneConfirmation(ctx context.Context, moduleUDID string, zoneID int, deviceID, corr string, args map[string]any) {
+	_, client, sess, err := b.bridgeSession(ctx)
+	if err != nil {
+		slog.Warn("emodul command confirmation setup failed", "module_udid", moduleUDID, "zone_id", zoneID, "corr", corr, "error", err)
+		b.requestSync()
+		return
+	}
+	mods, err := client.ListModules(ctx, sess)
+	if err != nil {
+		slog.Warn("emodul command confirmation module lookup failed", "module_udid", moduleUDID, "zone_id", zoneID, "corr", corr, "error", err)
+		b.requestSync()
+		return
+	}
+	mod, ok := findEmodulModule(mods, moduleUDID)
+	if !ok {
+		b.requestSync()
+		return
+	}
+
+	lastUpdate := b.lastKnownModuleUpdate(moduleUDID)
+	pollCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	defer cancel()
+	ticker := time.NewTicker(1500 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		partial, nextLastUpdate, err := b.fetchModuleSnapshot(pollCtx, client, sess, moduleUDID, lastUpdate)
+		if err != nil {
+			if isUnauthorized(err) {
+				_ = b.api.clearToken()
+				slog.Warn("emodul command confirmation session expired", "module_udid", moduleUDID, "zone_id", zoneID, "corr", corr, "error", err)
+				b.requestSync()
+				return
+			}
+			slog.Warn("emodul command confirmation fetch failed", "module_udid", moduleUDID, "zone_id", zoneID, "corr", corr, "error", err)
+		} else {
+			if nextLastUpdate != "" {
+				lastUpdate = nextLastUpdate
+				b.storeModuleLastUpdate(moduleUDID, nextLastUpdate)
+			}
+			confirmed := zoneConfirmedForArgs(partial, zoneID, args)
+			b.publishModuleSnapshot(mod, partial, confirmationCorrByDevice(confirmed, deviceID, corr))
+			if confirmed {
+				return
+			}
+		}
+
+		select {
+		case <-pollCtx.Done():
+			if err := pollCtx.Err(); err != nil && !errors.Is(err, context.Canceled) {
+				slog.Warn("emodul command confirmation timed out", "module_udid", moduleUDID, "zone_id", zoneID, "corr", corr)
+			}
+			b.requestSync()
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (b *EmodulDeviceBridge) fetchModuleSnapshot(ctx context.Context, client *EmodulClient, sess *EmodulSession, moduleUDID, lastUpdate string) (*ModuleDataPartial, string, error) {
+	var (
+		data []byte
+		err  error
+	)
+	if strings.TrimSpace(lastUpdate) == "" {
+		data, err = client.GetModuleData(ctx, sess, moduleUDID)
+	} else {
+		data, err = client.GetModuleUpdates(ctx, sess, moduleUDID, lastUpdate)
+	}
+	if err != nil {
+		return nil, lastUpdate, err
+	}
+	partial, err := ParseModuleData(data)
+	if err != nil {
+		return nil, lastUpdate, err
+	}
+	if strings.TrimSpace(partial.LastUpdate) == "" {
+		partial.LastUpdate = strings.TrimSpace(lastUpdate)
+	}
+	return partial, strings.TrimSpace(partial.LastUpdate), nil
+}
+
+func (b *EmodulDeviceBridge) lastKnownModuleUpdate(moduleUDID string) string {
+	if b == nil {
+		return ""
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return strings.TrimSpace(b.moduleLastUpdate[strings.TrimSpace(moduleUDID)])
+}
+
+func (b *EmodulDeviceBridge) storeModuleLastUpdate(moduleUDID, lastUpdate string) {
+	if b == nil {
+		return
+	}
+	moduleUDID = strings.TrimSpace(moduleUDID)
+	lastUpdate = strings.TrimSpace(lastUpdate)
+	if moduleUDID == "" || lastUpdate == "" {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.moduleLastUpdate[moduleUDID] = lastUpdate
+}
+
+func (b *EmodulDeviceBridge) publishModuleSnapshot(mod EmodulModule, partial *ModuleDataPartial, corrByDevice map[string]string) {
+	if partial == nil {
+		return
+	}
+	for _, zone := range partial.Zones {
+		deviceID := emodulZoneDeviceID(mod.UDID, zone.Zone.ID)
+		b.publishZone(mod, zone, corrByDevice[deviceID])
+	}
+}
+
+func findEmodulModule(mods []EmodulModule, moduleUDID string) (EmodulModule, bool) {
+	needle := strings.TrimSpace(moduleUDID)
+	for _, mod := range mods {
+		if strings.TrimSpace(mod.UDID) == needle {
+			return mod, true
+		}
+	}
+	return EmodulModule{}, false
+}
+
+func zoneConfirmedForArgs(partial *ModuleDataPartial, zoneID int, args map[string]any) bool {
+	if partial == nil {
+		return false
+	}
+	zone, ok := partial.ZoneByID(zoneID)
+	if !ok || zone == nil {
+		return false
+	}
+	if zone.IsDuringChange() {
+		return false
+	}
+	if power, ok := extractPowerArg(args); ok {
+		if emodulPowerState(*zone) != boolToPowerState(power) {
+			return false
+		}
+	}
+	if target, ok := extractTemperatureArg(args); ok {
+		if !tenthsMatchesFloat(zone.Zone.SetTemperature, target) {
+			return false
+		}
+	}
+	return true
+}
+
+func confirmationCorrByDevice(confirmed bool, deviceID, corr string) map[string]string {
+	if !confirmed {
+		return nil
+	}
+	deviceID = strings.TrimSpace(deviceID)
+	corr = strings.TrimSpace(corr)
+	if deviceID == "" || corr == "" {
+		return nil
+	}
+	return map[string]string{deviceID: corr}
+}
+
+func boolToPowerState(v bool) string {
+	if v {
+		return "on"
+	}
+	return "off"
+}
+
+func tenthsMatchesFloat(v *int, want float64) bool {
+	if v == nil {
+		return false
+	}
+	got := float64(*v) / 10.0
+	return absFloat(got-want) < 0.051
+}
+
+func absFloat(v float64) float64 {
+	if v < 0 {
+		return -v
+	}
+	return v
 }
 
 func (b *EmodulDeviceBridge) publishCommandResult(deviceID, corr string, success bool, status, errMsg string) {
 	b.publishJSON(emodulCommandResultTopicPref+deviceID, false, map[string]any{
 		"schema":    emodulBridgeSchema,
 		"type":      "command_result",
+		"origin":    "adapter",
 		"device_id": deviceID,
 		"corr":      corr,
 		"success":   success,

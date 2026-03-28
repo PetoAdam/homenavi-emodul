@@ -2,10 +2,12 @@ package backend
 
 import (
 	"encoding/json"
+	"strings"
 )
 
 type ModuleDataPartial struct {
-	Zones []ZoneElement
+	LastUpdate string
+	Zones      []ZoneElement
 }
 
 type ZoneElement struct {
@@ -16,6 +18,7 @@ type ZoneElement struct {
 
 type ZoneInfo struct {
 	ID                 int    `json:"id"`
+	DuringChange       bool   `json:"duringChange"`
 	CurrentTemperature *int   `json:"currentTemperature"`
 	SetTemperature     *int   `json:"setTemperature"`
 	ZoneState          string `json:"zoneState"`
@@ -26,9 +29,10 @@ type ZoneInfo struct {
 }
 
 type ZoneDescription struct {
-	ID      int    `json:"id"`
-	Name    string `json:"name"`
-	StyleID int    `json:"styleId"`
+	ID           int    `json:"id"`
+	Name         string `json:"name"`
+	StyleID      int    `json:"styleId"`
+	DuringChange bool   `json:"duringChange"`
 }
 
 type ZoneMode struct {
@@ -42,14 +46,34 @@ type ZoneMode struct {
 
 func ParseModuleData(raw []byte) (*ModuleDataPartial, error) {
 	var payload struct {
-		Zones struct {
-			Elements []ZoneElement `json:"elements"`
+		LastUpdate string `json:"lastUpdate"`
+		Zones      struct {
+			Elements []json.RawMessage `json:"elements"`
 		} `json:"zones"`
 	}
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return nil, err
 	}
-	return &ModuleDataPartial{Zones: payload.Zones.Elements}, nil
+	out := &ModuleDataPartial{LastUpdate: strings.TrimSpace(payload.LastUpdate)}
+	for _, rawZone := range payload.Zones.Elements {
+		trimmed := strings.TrimSpace(string(rawZone))
+		if trimmed == "" || trimmed == "null" {
+			continue
+		}
+		var zone ZoneElement
+		if err := json.Unmarshal(rawZone, &zone); err != nil {
+			return nil, err
+		}
+		if zone.Zone.ID <= 0 {
+			continue
+		}
+		out.Zones = append(out.Zones, zone)
+	}
+	return out, nil
+}
+
+func (z ZoneElement) IsDuringChange() bool {
+	return z.Zone.DuringChange || z.Description.DuringChange
 }
 
 func (m *ModuleDataPartial) ZoneByID(zoneID int) (*ZoneElement, bool) {
