@@ -341,12 +341,12 @@ func (a *EmodulAPI) SetConstantTemperature(ctx context.Context, moduleUDID strin
 	}
 	payload := map[string]any{
 		"mode": map[string]any{
-			"id":            e.Mode.ID,
+			"id":             e.Mode.ID,
 			"parentId":       zoneID,
-			"mode":          mode,
-			"constTempTime": constTempTime,
+			"mode":           mode,
+			"constTempTime":  constTempTime,
 			"setTemperature": setTemp,
-			"scheduleIndex": scheduleIndex,
+			"scheduleIndex":  scheduleIndex,
 		},
 	}
 	return a.postZoneCommand(ctx, moduleUDID, payload)
