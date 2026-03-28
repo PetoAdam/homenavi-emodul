@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "protocol": "emodul",
+  "capabilities": [
+    {
+      "id": "switch",
+      "name": "Power",
+      "property": "power",
+      "kind": "actuator",
+      "value_type": "string",
+      "enum": ["on", "off"]
+    },
+    {
+      "id": "temperature",
+      "name": "Temperature",
+      "property": "temperature",
+      "kind": "sensor",
+      "value_type": "number",
+      "unit": "°C"
+    },
+    {
+      "id": "humidity",
+      "name": "Humidity",
+      "property": "humidity",
+      "kind": "sensor",
+      "value_type": "number",
+      "unit": "%"
+    },
+    {
+      "id": "climate.target_temperature",
+      "name": "Target Temperature",
+      "property": "target_temperature",
+      "kind": "actuator",
+      "value_type": "number",
+      "unit": "°C",
+      "range": { "min": 5, "max": 35, "step": 0.5 }
+    },
+    {
+      "id": "climate.mode",
+      "name": "Zone Mode",
+      "property": "zone_mode",
+      "kind": "sensor",
+      "value_type": "string"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 0 1200 600" role="img" aria-label="Integration template preview">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f213b"/>
+      <stop offset="100%" stop-color="#08111f"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.85" cy="0.2" r="0.6">
+      <stop offset="0%" stop-color="#7cb3ff" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#08111f" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="600" fill="url(#bg)"/>
+  <circle cx="980" cy="140" r="260" fill="url(#glow)"/>
+  <rect x="120" y="150" width="520" height="320" rx="28" fill="#0d2a52" stroke="#6fa9ff" stroke-width="2"/>
+  <rect x="170" y="200" width="420" height="24" rx="12" fill="#6fa9ff"/>
+  <rect x="170" y="246" width="320" height="18" rx="9" fill="#4e82c8"/>
+  <rect x="170" y="284" width="360" height="18" rx="9" fill="#3a659d"/>
+  <rect x="170" y="322" width="280" height="18" rx="9" fill="#2b4f7a"/>
+  <rect x="720" y="210" width="340" height="220" rx="26" fill="#10264a" stroke="#6fa9ff" stroke-width="2"/>
+  <path d="M760 250h260" stroke="#6fa9ff" stroke-width="12" stroke-linecap="round"/>
+  <path d="M760 300h220" stroke="#4e82c8" stroke-width="10" stroke-linecap="round"/>
+  <path d="M760 350h180" stroke="#3a659d" stroke-width="10" stroke-linecap="round"/>
+</svg>

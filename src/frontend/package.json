@@ -1,0 +1,31 @@
+{
+  "name": "homenavi-integration-frontend",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-icons": "^5.6.0"
+  },
+  "scripts": {
+    "dev:tab": "HN_TARGET=tab vite",
+    "dev:widget-overview": "HN_TARGET=widget-overview vite",
+    "dev:widget-configure": "HN_TARGET=widget-configure vite",
+    "dev:setup": "HN_TARGET=setup vite",
+    "build:tab": "HN_TARGET=tab vite build",
+    "build:setup": "HN_TARGET=setup vite build",
+    "build:widget-overview": "HN_TARGET=widget-overview vite build",
+    "build:widget-configure": "HN_TARGET=widget-configure vite build",
+    "build": "npm run build:tab && npm run build:setup && npm run build:widget-overview && npm run build:widget-configure && node ./scripts/export-build.mjs",
+    "preview:tab": "HN_TARGET=tab vite preview",
+    "preview:setup": "HN_TARGET=setup vite preview",
+    "preview:widget-overview": "HN_TARGET=widget-overview vite preview",
+    "preview:widget-configure": "HN_TARGET=widget-configure vite preview"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "react-icons": "^5.5.0",
+    "vite": "^6.3.1"
+  }
+}

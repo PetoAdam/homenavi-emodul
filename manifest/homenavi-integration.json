@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "id": "emodul",
+  "name": "eModul",
+  "version": "0.1.0",
+  "publisher": "PetoAdam",
+  "homepage": "https://github.com/PetoAdam/homenavi-emodul",
+  "verified": false,
+  "ui": {
+    "sidebar": {
+      "enabled": true,
+      "path": "/ui/",
+      "label": "eModul",
+      "icon": "/assets/icon.svg"
+    },
+    "setup": {
+      "enabled": true,
+      "path": "/ui/setup/",
+      "label": "Setup",
+      "icon": "/assets/icon.svg"
+    }
+  },
+  "widgets": [
+    {
+      "type": "integration.emodul.overview",
+      "display_name": "eModul Overview",
+      "description": "Zone overview with current, target, and humidity values.",
+      "entry": { "kind": "iframe", "url": "/widgets/overview/" },
+      "requested_scopes": []
+    },
+    {
+      "type": "integration.emodul.configure",
+      "display_name": "eModul Configure",
+      "description": "Rename a zone and set target values.",
+      "entry": { "kind": "iframe", "url": "/widgets/configure/" },
+      "requested_scopes": []
+    }
+  ],
+  "device_extension": {
+    "enabled": true,
+    "provider_id": "emodul",
+    "protocol": "emodul",
+    "discovery_mode": "sync",
+    "supports_pairing": false,
+    "capability_schema_url": "/.well-known/homenavi-capabilities.json"
+  }
+}

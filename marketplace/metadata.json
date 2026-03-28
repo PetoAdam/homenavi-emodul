@@ -1,0 +1,25 @@
+{
+  "id": "emodul",
+  "name": "eModul",
+  "version": "0.1.0",
+  "description": "eModul climate control integration.",
+  "publisher": "PetoAdam",
+  "homepage": "https://github.com/PetoAdam/homenavi-emodul",
+  "repo_url": "https://github.com/PetoAdam/homenavi-emodul",
+  "listen_path": "/integrations/emodul",
+  "deployment_artifacts": {
+    "compose": {
+      "file": "compose/docker-compose.integration.yml"
+    },
+    "helm": {
+      "chart_ref": "oci://ghcr.io/petoadam/homenavi-emodul"
+    }
+  },
+  "image": "ghcr.io/petoadam/homenavi-emodul",
+  "assets": {
+    "icon": "marketplace/assets/icon.svg"
+  },
+  "images": [
+    "marketplace/assets/hero.svg"
+  ]
+}

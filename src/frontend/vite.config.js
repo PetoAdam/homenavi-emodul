@@ -1,0 +1,72 @@
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { dirname } from 'node:path';
+import net from 'node:net';
+
+const allowedTargets = new Set(['tab', 'widget-overview', 'widget-configure', 'setup']);
+const target = allowedTargets.has(process.env.HN_TARGET) ? process.env.HN_TARGET : 'tab';
+
+const here = dirname(fileURLToPath(import.meta.url));
+const frontendRoot = here;
+
+const inputByTarget = {
+  tab: resolve(frontendRoot, 'tab.html'),
+  'widget-overview': resolve(frontendRoot, 'widget.html'),
+  'widget-configure': resolve(frontendRoot, 'widget.html'),
+  setup: resolve(frontendRoot, 'setup.html')
+};
+const inputHtml = inputByTarget[target] || inputByTarget.tab;
+
+function isPortOpen(port) {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.once('error', () => resolve(false));
+    server.once('listening', () => {
+      server.close(() => resolve(true));
+    });
+    server.listen(port, '127.0.0.1');
+  });
+}
+
+async function findFreePort(start) {
+  let port = start;
+  while (port < start + 1000) {
+    // eslint-disable-next-line no-await-in-loop
+    if (await isPortOpen(port)) return port;
+    port += 1;
+  }
+  return start;
+}
+
+export default defineConfig(async () => {
+  const envPort = Number(process.env.HN_PORT);
+  const basePort = Number.isFinite(envPort) && envPort > 0
+    ? envPort
+    : ((target === 'widget-overview' || target === 'widget-configure') ? 10001 : (target === 'setup' ? 10002 : 10000));
+
+  const port = await findFreePort(basePort);
+
+  return {
+    plugins: [react()],
+    root: frontendRoot,
+    base: './',
+    build: {
+      outDir: resolve(here, 'dist', target),
+      emptyOutDir: true,
+      rollupOptions: {
+        input: inputHtml,
+        output: {
+          entryFileNames: 'assets/[name].js',
+          chunkFileNames: 'assets/[name].js',
+          assetFileNames: 'assets/[name][extname]'
+        }
+      }
+    },
+    server: {
+      port,
+      strictPort: false
+    }
+  };
+});
