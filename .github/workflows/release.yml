@@ -24,7 +24,7 @@ jobs:
       - name: Homenavi release
         uses: PetoAdam/homenavi/.github/actions/integration-release@feature/helm_support
         with:
-          image_name: homenavi-integration-template
+          image_name: homenavi-emodul
           ghcr_username: ${{ github.actor }}
           ghcr_token: ${{ secrets.GITHUB_TOKEN }}
           manifest_path: manifest/homenavi-integration.json
