@@ -18,7 +18,7 @@ import (
 const (
 	emodulProtocol               = "emodul"
 	emodulBridgeSchema           = "hdp.v1"
-	emodulDefaultMQTTBrokerURL   = "tcp://mosquitto:1883"
+	emodulDefaultMQTTBrokerURL   = "tcp://emqx:1883"
 	emodulDefaultSyncInterval    = 60 * time.Second
 	emodulAdapterHelloTopic      = "homenavi/hdp/adapter/hello"
 	emodulAdapterStatusPrefix    = "homenavi/hdp/adapter/status/"

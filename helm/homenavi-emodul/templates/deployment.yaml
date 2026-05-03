@@ -1,25 +1,25 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "integration-template.fullname" . }}
+  name: {{ include "emodul.fullname" . }}
   labels:
-    {{- include "integration-template.labels" . | nindent 4 }}
+    {{- include "emodul.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      {{- include "integration-template.selectorLabels" . | nindent 6 }}
+      {{- include "emodul.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "integration-template.selectorLabels" . | nindent 8 }}
+        {{- include "emodul.selectorLabels" . | nindent 8 }}
     spec:
       {{- with .Values.podSecurityContext }}
       securityContext:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
-        - name: {{ include "integration-template.name" . }}
+        - name: {{ include "emodul.name" . }}
           image: "{{ .Values.image.repository }}:{{ default (printf "v%s" .Chart.AppVersion) .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
@@ -57,7 +57,7 @@ spec:
       volumes:
         - name: integration-config
           persistentVolumeClaim:
-            claimName: {{ default (printf "%s-config" (include "integration-template.fullname" .)) .Values.persistence.existingClaim }}
+            claimName: {{ default (printf "%s-config" (include "emodul.fullname" .)) .Values.persistence.existingClaim }}
       {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:

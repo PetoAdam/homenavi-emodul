@@ -2,9 +2,9 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ include "integration-template.fullname" . }}-config
+  name: {{ include "emodul.fullname" . }}-config
   labels:
-    {{- include "integration-template.labels" . | nindent 4 }}
+    {{- include "emodul.labels" . | nindent 4 }}
 spec:
   accessModes:
     {{- range .Values.persistence.accessModes }}
