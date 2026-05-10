@@ -29,6 +29,8 @@ const (
 	emodulCommandResultTopicPref = "homenavi/hdp/device/command_result/"
 )
 
+var errEmodulNotConfigured = errors.New("integration is not configured")
+
 type EmodulDeviceBridge struct {
 	setup        *SetupStore
 	api          *EmodulAPI
@@ -180,7 +182,9 @@ func (b *EmodulDeviceBridge) syncAndReport(ctx context.Context, corrByDevice map
 func (b *EmodulDeviceBridge) syncOnce(ctx context.Context, corrByDevice map[string]string) error {
 	_, client, sess, err := b.bridgeSession(ctx)
 	if err != nil {
-		b.clearKnownDevices("not configured")
+		if errors.Is(err, errEmodulNotConfigured) {
+			b.clearKnownDevices("not configured")
+		}
 		return err
 	}
 	mods, err := client.ListModules(ctx, sess)
@@ -197,6 +201,7 @@ func (b *EmodulDeviceBridge) syncOnce(ctx context.Context, corrByDevice map[stri
 	}
 
 	current := make(map[string]zoneBridgeRef)
+	failedModules := map[string]struct{}{}
 	for _, mod := range mods {
 		moduleUDID := strings.TrimSpace(mod.UDID)
 		if moduleUDID == "" {
@@ -212,11 +217,13 @@ func (b *EmodulDeviceBridge) syncOnce(ctx context.Context, corrByDevice map[stri
 			data, err = client.GetModuleData(ctx, sess, moduleUDID)
 		}
 		if err != nil {
+			failedModules[moduleUDID] = struct{}{}
 			slog.Warn("emodul module sync failed", "module_udid", moduleUDID, "error", err)
 			continue
 		}
 		partial, err := ParseModuleData(data)
 		if err != nil {
+			failedModules[moduleUDID] = struct{}{}
 			slog.Warn("emodul module parse failed", "module_udid", moduleUDID, "error", err)
 			continue
 		}
@@ -227,6 +234,8 @@ func (b *EmodulDeviceBridge) syncOnce(ctx context.Context, corrByDevice map[stri
 			b.publishZone(mod, zone, corrByDevice[deviceID])
 		}
 	}
+
+	current = b.preserveKnownDevicesForFailedModules(current, failedModules)
 
 	b.reconcileKnownDevices(current)
 	b.publishStatus("online", fmt.Sprintf("synced %d zones", len(current)))
@@ -239,7 +248,7 @@ func (b *EmodulDeviceBridge) bridgeSession(ctx context.Context) (*EmodulSettings
 		return nil, nil, nil, err
 	}
 	if strings.TrimSpace(settings.Username) == "" || strings.TrimSpace(settings.Password) == "" {
-		return nil, nil, nil, errors.New("integration is not configured")
+		return nil, nil, nil, errEmodulNotConfigured
 	}
 	client := b.api.clientFor(settings)
 	sess, err := b.api.ensureSession(ctx, settings, client)
@@ -261,6 +270,27 @@ func (b *EmodulDeviceBridge) reconcileKnownDevices(current map[string]zoneBridge
 		}
 		b.publishRemoval(deviceID, "zone_removed")
 	}
+}
+
+func (b *EmodulDeviceBridge) preserveKnownDevicesForFailedModules(current map[string]zoneBridgeRef, failedModules map[string]struct{}) map[string]zoneBridgeRef {
+	if len(failedModules) == 0 {
+		return current
+	}
+	if current == nil {
+		current = make(map[string]zoneBridgeRef)
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for deviceID, ref := range b.known {
+		if _, failed := failedModules[strings.TrimSpace(ref.ModuleUDID)]; !failed {
+			continue
+		}
+		if _, exists := current[deviceID]; exists {
+			continue
+		}
+		current[deviceID] = ref
+	}
+	return current
 }
 
 func (b *EmodulDeviceBridge) clearKnownDevices(reason string) {

@@ -75,3 +75,26 @@ func TestBridgeStoresAndReadsModuleLastUpdate(t *testing.T) {
 		t.Fatalf("unexpected lastUpdate: %q", got)
 	}
 }
+
+func TestPreserveKnownDevicesForFailedModules_KeepsPreviousZoneIDs(t *testing.T) {
+	b := &EmodulDeviceBridge{known: map[string]zoneBridgeRef{
+		"emodul/module-a/zone/1": {ModuleUDID: "module-a", ZoneID: 1},
+		"emodul/module-b/zone/2": {ModuleUDID: "module-b", ZoneID: 2},
+	}}
+
+	current := map[string]zoneBridgeRef{
+		"emodul/module-c/zone/3": {ModuleUDID: "module-c", ZoneID: 3},
+	}
+
+	merged := b.preserveKnownDevicesForFailedModules(current, map[string]struct{}{"module-b": {}})
+
+	if _, ok := merged["emodul/module-c/zone/3"]; !ok {
+		t.Fatalf("expected current module to remain present")
+	}
+	if _, ok := merged["emodul/module-b/zone/2"]; !ok {
+		t.Fatalf("expected failed module devices to be preserved")
+	}
+	if _, ok := merged["emodul/module-a/zone/1"]; ok {
+		t.Fatalf("did not expect unrelated previous module devices to be preserved")
+	}
+}
