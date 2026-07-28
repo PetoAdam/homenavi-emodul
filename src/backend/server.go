@@ -52,6 +52,9 @@ func (s *Server) Routes() http.Handler {
 	assets := http.FileServer(http.FS(mustSub(s.WebFS, "assets")))
 	mux.Handle("/assets/", http.StripPrefix("/assets/", assets))
 
+	setupUI := http.FileServer(http.FS(mustSub(s.WebFS, "ui/setup")))
+	mux.Handle("/ui/setup/", noCacheHeaders(http.StripPrefix("/ui/setup/", setupUI)))
+
 	ui := http.FileServer(http.FS(mustSub(s.WebFS, "ui")))
 	mux.Handle("/ui/", http.StripPrefix("/ui/", ui))
 
@@ -65,4 +68,13 @@ func (s *Server) Routes() http.Handler {
 
 	s.Mux = mux
 	return mux
+}
+
+func noCacheHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+		w.Header().Set("Pragma", "no-cache")
+		w.Header().Set("Expires", "0")
+		next.ServeHTTP(w, r)
+	})
 }
