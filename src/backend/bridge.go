@@ -78,10 +78,13 @@ type bridgeInput struct {
 	Range        map[string]any   `json:"range,omitempty"`
 }
 
-func NewEmodulDeviceBridge(setup *SetupStore) *EmodulDeviceBridge {
+func NewEmodulDeviceBridge(api *EmodulAPI) *EmodulDeviceBridge {
+	if api == nil {
+		api = NewEmodulAPI(nil)
+	}
 	return &EmodulDeviceBridge{
-		setup:            setup,
-		api:              &EmodulAPI{Setup: setup, Client: NewEmodulClient(nil)},
+		setup:            api.Setup,
+		api:              api,
 		adapterID:        strings.TrimSpace(firstNonEmpty(os.Getenv("EMODUL_ADAPTER_ID"), "emodul-integration")),
 		syncInterval:     emodulSyncInterval(),
 		syncNow:          make(chan struct{}, 1),

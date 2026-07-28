@@ -30,6 +30,7 @@ func main() {
 		log.Fatalf("read manifest: %v", err)
 	}
 	setupStore := backend.NewSetupStore(backend.DefaultSetupPath())
+	api := backend.NewEmodulAPI(setupStore)
 	adminAuth, err := backend.NewAdminAuthFromEnv()
 	if err != nil {
 		log.Fatalf("load admin auth: %v", err)
@@ -46,7 +47,7 @@ func main() {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	bridge := backend.NewEmodulDeviceBridge(setupStore)
+	bridge := backend.NewEmodulDeviceBridge(api)
 	if err := bridge.Start(ctx); err != nil {
 		log.Printf("device bridge disabled: %v", err)
 	} else {
@@ -58,6 +59,7 @@ func main() {
 		ManifestJSON: manifestJSON,
 		SetupStore:   setupStore,
 		AdminAuth:    adminAuth,
+		API:          api,
 	}
 	h := s.Routes()
 

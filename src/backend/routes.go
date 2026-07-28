@@ -5,14 +5,24 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
-func RegisterAPIRoutes(mux *http.ServeMux, setup *SetupStore) {
-	api := &EmodulAPI{Setup: setup, Client: NewEmodulClient(nil)}
+const (
+	defaultDataPollIntervalSec = 30
+	minDataPollIntervalSec     = 5
+	maxDataPollIntervalSec     = 3600
+)
+
+func RegisterAPIRoutes(mux *http.ServeMux, api *EmodulAPI) {
+	if api == nil {
+		api = NewEmodulAPI(nil)
+	}
 
 	mux.HandleFunc("/api/status", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -189,11 +199,28 @@ func writeRawJSON(w http.ResponseWriter, status int, payload []byte) {
 type EmodulAPI struct {
 	Setup  *SetupStore
 	Client *EmodulClient
+
+	cacheMu         sync.RWMutex
+	moduleCache     map[string][]byte
+	refreshInFlight map[string]bool
+	pollerOnce      sync.Once
+}
+
+func NewEmodulAPI(setup *SetupStore) *EmodulAPI {
+	a := &EmodulAPI{
+		Setup:           setup,
+		Client:          NewEmodulClient(nil),
+		moduleCache:     map[string][]byte{},
+		refreshInFlight: map[string]bool{},
+	}
+	a.startBackgroundPoller()
+	return a
 }
 
 type Status struct {
-	Configured bool  `json:"configured"`
-	UserID     int64 `json:"user_id,omitempty"`
+	Configured          bool  `json:"configured"`
+	UserID              int64 `json:"user_id,omitempty"`
+	DataPollIntervalSec int   `json:"data_poll_interval_sec"`
 }
 
 func (a *EmodulAPI) Status(ctx context.Context) (*Status, error) {
@@ -205,9 +232,9 @@ func (a *EmodulAPI) Status(ctx context.Context) (*Status, error) {
 		return nil, err
 	}
 	if strings.TrimSpace(settings.Username) == "" || strings.TrimSpace(settings.Password) == "" {
-		return &Status{Configured: false}, nil
+		return &Status{Configured: false, DataPollIntervalSec: normalizeDataPollIntervalSec(settings.DataPollIntervalSec)}, nil
 	}
-	return &Status{Configured: true, UserID: settings.UserID}, nil
+	return &Status{Configured: true, UserID: settings.UserID, DataPollIntervalSec: normalizeDataPollIntervalSec(settings.DataPollIntervalSec)}, nil
 }
 
 func (a *EmodulAPI) ListModules(ctx context.Context) ([]EmodulModule, error) {
@@ -236,6 +263,25 @@ func (a *EmodulAPI) ListModules(ctx context.Context) ([]EmodulModule, error) {
 }
 
 func (a *EmodulAPI) GetModuleData(ctx context.Context, moduleUDID string) ([]byte, error) {
+	moduleUDID = strings.TrimSpace(moduleUDID)
+	if moduleUDID == "" {
+		return nil, errors.New("missing module udid")
+	}
+	if cached, ok := a.cachedModuleData(moduleUDID); ok {
+		a.triggerModuleReload(moduleUDID)
+		return cached, nil
+	}
+
+	data, err := a.fetchModuleData(ctx, moduleUDID)
+	if err != nil {
+		return nil, err
+	}
+	a.storeModuleData(moduleUDID, data)
+	a.triggerModuleReload(moduleUDID)
+	return data, nil
+}
+
+func (a *EmodulAPI) fetchModuleData(ctx context.Context, moduleUDID string) ([]byte, error) {
 	settings, err := a.loadSettings()
 	if err != nil {
 		return nil, err
@@ -399,6 +445,7 @@ func (a *EmodulAPI) postZoneCommand(ctx context.Context, moduleUDID string, payl
 		}
 		resp, err = client.ChangeZoneParameters(ctx, sess, moduleUDID, payload)
 	}
+	a.triggerModuleReload(moduleUDID)
 	return resp, err
 }
 
@@ -421,7 +468,149 @@ func (a *EmodulAPI) putZoneDescription(ctx context.Context, moduleUDID string, z
 		}
 		resp, err = client.UpdateZoneDescription(ctx, sess, moduleUDID, zoneID, payload)
 	}
+	a.triggerModuleReload(moduleUDID)
 	return resp, err
+}
+
+func (a *EmodulAPI) startBackgroundPoller() {
+	if a == nil {
+		return
+	}
+	a.pollerOnce.Do(func() {
+		go a.runBackgroundPoller()
+	})
+}
+
+func (a *EmodulAPI) runBackgroundPoller() {
+	for {
+		interval := a.currentDataPollInterval()
+		timer := time.NewTimer(interval)
+		<-timer.C
+		pollCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		a.pollCachedModules(pollCtx)
+		cancel()
+	}
+}
+
+func (a *EmodulAPI) currentDataPollInterval() time.Duration {
+	settings, err := a.loadSettings()
+	if err != nil {
+		return time.Duration(defaultDataPollIntervalSec) * time.Second
+	}
+	sec := normalizeDataPollIntervalSec(settings.DataPollIntervalSec)
+	return time.Duration(sec) * time.Second
+}
+
+func (a *EmodulAPI) pollCachedModules(ctx context.Context) {
+	modules := a.cachedModuleIDs()
+	for _, moduleUDID := range modules {
+		moduleCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		data, err := a.fetchModuleData(moduleCtx, moduleUDID)
+		cancel()
+		if err != nil {
+			slog.Warn("emodul module poll failed", "module_udid", moduleUDID, "error", err)
+			continue
+		}
+		a.storeModuleData(moduleUDID, data)
+	}
+}
+
+func (a *EmodulAPI) cachedModuleIDs() []string {
+	if a == nil {
+		return nil
+	}
+	a.cacheMu.RLock()
+	defer a.cacheMu.RUnlock()
+	out := make([]string, 0, len(a.moduleCache))
+	for moduleUDID := range a.moduleCache {
+		out = append(out, moduleUDID)
+	}
+	return out
+}
+
+func (a *EmodulAPI) triggerModuleReload(moduleUDID string) {
+	if a == nil {
+		return
+	}
+	moduleUDID = strings.TrimSpace(moduleUDID)
+	if moduleUDID == "" {
+		return
+	}
+	a.cacheMu.Lock()
+	if a.moduleCache == nil {
+		a.moduleCache = map[string][]byte{}
+	}
+	if a.refreshInFlight == nil {
+		a.refreshInFlight = map[string]bool{}
+	}
+	if a.refreshInFlight[moduleUDID] {
+		a.cacheMu.Unlock()
+		return
+	}
+	a.refreshInFlight[moduleUDID] = true
+	a.cacheMu.Unlock()
+
+	go func() {
+		defer func() {
+			a.cacheMu.Lock()
+			delete(a.refreshInFlight, moduleUDID)
+			a.cacheMu.Unlock()
+		}()
+		reloadCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		data, err := a.fetchModuleData(reloadCtx, moduleUDID)
+		if err != nil {
+			slog.Warn("emodul module reload failed", "module_udid", moduleUDID, "error", err)
+			return
+		}
+		a.storeModuleData(moduleUDID, data)
+	}()
+}
+
+func (a *EmodulAPI) cachedModuleData(moduleUDID string) ([]byte, bool) {
+	if a == nil {
+		return nil, false
+	}
+	a.cacheMu.RLock()
+	defer a.cacheMu.RUnlock()
+	data, ok := a.moduleCache[moduleUDID]
+	if !ok || len(data) == 0 {
+		return nil, false
+	}
+	cloned := make([]byte, len(data))
+	copy(cloned, data)
+	return cloned, true
+}
+
+func (a *EmodulAPI) storeModuleData(moduleUDID string, data []byte) {
+	if a == nil {
+		return
+	}
+	moduleUDID = strings.TrimSpace(moduleUDID)
+	if moduleUDID == "" || len(data) == 0 {
+		return
+	}
+	cloned := make([]byte, len(data))
+	copy(cloned, data)
+	a.cacheMu.Lock()
+	if a.moduleCache == nil {
+		a.moduleCache = map[string][]byte{}
+	}
+	a.moduleCache[moduleUDID] = cloned
+	a.cacheMu.Unlock()
+}
+
+func normalizeDataPollIntervalSec(raw int) int {
+	if raw <= 0 {
+		return defaultDataPollIntervalSec
+	}
+	if raw < minDataPollIntervalSec {
+		return minDataPollIntervalSec
+	}
+	if raw > maxDataPollIntervalSec {
+		return maxDataPollIntervalSec
+	}
+	return raw
 }
 
 func (a *EmodulAPI) loadSettings() (*EmodulSettings, error) {

@@ -68,6 +68,7 @@ function useModuleZones() {
   const [status, setStatus] = React.useState('');
   const [moduleUDID, setModuleUDID] = React.useState('');
   const [zones, setZones] = React.useState([]);
+  const [pollIntervalSec, setPollIntervalSec] = React.useState(30);
 
   const refreshZones = React.useCallback(async (udid) => {
     const data = await fetchZones(String(udid));
@@ -75,11 +76,26 @@ function useModuleZones() {
   }, []);
 
   React.useEffect(() => {
+    if (typeof window === 'undefined' || !moduleUDID || loading || status) {
+      return undefined;
+    }
+    const configured = Number(pollIntervalSec);
+    const intervalMs = Math.max(5, Number.isFinite(configured) ? configured : 30) * 1000;
+    const timer = window.setInterval(() => {
+      refreshZones(moduleUDID).catch(() => {
+        // Keep the current UI state when background refresh fails.
+      });
+    }, intervalMs);
+    return () => window.clearInterval(timer);
+  }, [loading, moduleUDID, pollIntervalSec, refreshZones, status]);
+
+  React.useEffect(() => {
     let alive = true;
     (async () => {
       try {
         const st = await fetchStatus();
         if (!alive) return;
+        setPollIntervalSec(Number(st?.data_poll_interval_sec) || 30);
         if (!st?.configured) {
           setStatus('Not configured');
           return;

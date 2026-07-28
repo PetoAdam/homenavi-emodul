@@ -17,11 +17,12 @@ import (
 const defaultEmodulBaseURL = "https://emodul.eu/api/v1"
 
 type EmodulSettings struct {
-	BaseURL  string
-	Username string
-	Password string
-	Token    string
-	UserID   int64
+	BaseURL             string
+	Username            string
+	Password            string
+	Token               string
+	UserID              int64
+	DataPollIntervalSec int
 }
 
 func ParseEmodulSettings(raw map[string]any) *EmodulSettings {
@@ -48,6 +49,10 @@ func ParseEmodulSettings(raw map[string]any) *EmodulSettings {
 		out.Token = strings.TrimSpace(v)
 	}
 	out.UserID = anyToInt64(raw["user_id"])
+	out.DataPollIntervalSec = anyToInt(raw["data_poll_interval_sec"])
+	if out.DataPollIntervalSec <= 0 {
+		out.DataPollIntervalSec = anyToInt(raw["poll_interval_sec"])
+	}
 	return out
 }
 
@@ -61,6 +66,22 @@ func anyToInt64(v any) int64 {
 		return int64(t)
 	case string:
 		i, _ := strconv.ParseInt(strings.TrimSpace(t), 10, 64)
+		return i
+	default:
+		return 0
+	}
+}
+
+func anyToInt(v any) int {
+	switch t := v.(type) {
+	case int:
+		return t
+	case int64:
+		return int(t)
+	case float64:
+		return int(t)
+	case string:
+		i, _ := strconv.Atoi(strings.TrimSpace(t))
 		return i
 	default:
 		return 0

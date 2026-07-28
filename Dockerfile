@@ -1,9 +1,9 @@
-FROM node:20-bookworm-slim AS webbuild
+FROM node:22-bookworm-slim AS webbuild
 WORKDIR /src
 
 COPY src/frontend/package.json ./src/frontend/package.json
 COPY src/frontend/package-lock.json ./src/frontend/package-lock.json
-RUN cd src/frontend && npm install
+RUN cd src/frontend && npm ci
 
 COPY src/frontend ./src/frontend
 RUN cd src/frontend && npm run build
@@ -22,7 +22,7 @@ COPY --from=webbuild /src/web/widgets ./web/widgets
 RUN CGO_ENABLED=0 go build -o /out/integration ./src/backend/cmd/integration
 
 
-FROM alpine:3.21
+FROM alpine:3.22
 RUN apk add --no-cache ca-certificates
 WORKDIR /app
 RUN mkdir -p /app/config

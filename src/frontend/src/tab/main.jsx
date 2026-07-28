@@ -38,6 +38,7 @@ function SetupApp() {
   const [baseURL, setBaseURL] = React.useState('https://emodul.eu/api/v1');
   const [username, setUsername] = React.useState('');
   const [password, setPassword] = React.useState('');
+  const [dataPollIntervalSec, setDataPollIntervalSec] = React.useState('30');
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [status, setStatus] = React.useState('');
@@ -52,6 +53,8 @@ function SetupApp() {
         setBaseURL(String(settings.base_url || settings.endpoint || 'https://emodul.eu/api/v1'));
         setUsername(String(settings.username || ''));
         setPassword(String(settings.password || ''));
+        const configured = Number(settings.data_poll_interval_sec || settings.poll_interval_sec || 30);
+        setDataPollIntervalSec(String(Number.isFinite(configured) && configured > 0 ? configured : 30));
       })
       .catch(() => {
         if (!alive) return;
@@ -107,6 +110,19 @@ function SetupApp() {
                 disabled={loading || saving}
               />
             </label>
+            <label style={{ display: 'grid', gap: 6 }}>
+              <span className="hn-subtitle">Data poll interval (seconds)</span>
+              <input
+                className="hn-input"
+                type="number"
+                min={5}
+                max={3600}
+                value={dataPollIntervalSec}
+                onChange={(e) => setDataPollIntervalSec(e.target.value)}
+                placeholder="30"
+                disabled={loading || saving}
+              />
+            </label>
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
             <button
@@ -119,7 +135,15 @@ function SetupApp() {
                   const nextBaseURL = String(baseURL || '').trim();
                   const nextUsername = String(username || '').trim();
                   const nextPassword = String(password || '').trim() || String(original.password || '');
-                  const next = { ...original, base_url: nextBaseURL, username: nextUsername, password: nextPassword };
+                  const parsedInterval = Number(dataPollIntervalSec);
+                  const normalizedInterval = Math.max(5, Math.min(3600, Number.isFinite(parsedInterval) ? Math.floor(parsedInterval) : 30));
+                  const next = {
+                    ...original,
+                    base_url: nextBaseURL,
+                    username: nextUsername,
+                    password: nextPassword,
+                    data_poll_interval_sec: normalizedInterval,
+                  };
 
                   const prevBaseURL = String(original.base_url || original.endpoint || '').trim();
                   const prevUsername = String(original.username || '').trim();
@@ -129,6 +153,7 @@ function SetupApp() {
                     delete next.user_id;
                   }
                   delete next.endpoint;
+                  delete next.poll_interval_sec;
 
                   await saveSetup(next);
                   setStatus('Setup saved.');
@@ -153,6 +178,7 @@ function TabApp() {
   const [configured, setConfigured] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
   const [status, setStatus] = React.useState('');
+  const [pollIntervalSec, setPollIntervalSec] = React.useState(30);
 
   const [modules, setModules] = React.useState([]);
   const [selectedUDID, setSelectedUDID] = React.useState('');
@@ -181,6 +207,7 @@ function TabApp() {
         const st = await fetchStatus();
         if (!alive) return;
         const ok = Boolean(st?.configured);
+        setPollIntervalSec(Number(st?.data_poll_interval_sec) || 30);
         setConfigured(ok);
         if (!ok) {
           setStatus('Not configured. Open the Setup page from the sidebar.');
@@ -202,6 +229,20 @@ function TabApp() {
     })();
     return () => { alive = false; };
   }, []);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined' || !selectedUDID || !configured || loading || status) {
+      return undefined;
+    }
+    const configuredSec = Number(pollIntervalSec);
+    const intervalMs = Math.max(5, Number.isFinite(configuredSec) ? configuredSec : 30) * 1000;
+    const timer = window.setInterval(() => {
+      refreshZones(selectedUDID).catch(() => {
+        // Keep current state if an interval refresh fails.
+      });
+    }, intervalMs);
+    return () => window.clearInterval(timer);
+  }, [configured, loading, pollIntervalSec, refreshZones, selectedUDID, status]);
 
   React.useEffect(() => {
     let alive = true;

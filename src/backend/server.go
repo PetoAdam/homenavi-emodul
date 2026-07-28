@@ -12,6 +12,7 @@ type Server struct {
 	ManifestJSON []byte
 	SetupStore   *SetupStore
 	AdminAuth    *AdminAuth
+	API          *EmodulAPI
 }
 
 func mustSub(fsys fs.FS, dir string) fs.FS {
@@ -39,7 +40,11 @@ func (s *Server) Routes() http.Handler {
 	wellKnown := http.FileServer(http.FS(mustSub(s.WebFS, ".well-known")))
 	mux.Handle("/.well-known/", http.StripPrefix("/.well-known/", wellKnown))
 
-	RegisterAPIRoutes(mux, s.SetupStore)
+	api := s.API
+	if api == nil {
+		api = NewEmodulAPI(s.SetupStore)
+	}
+	RegisterAPIRoutes(mux, api)
 	if s.SetupStore != nil {
 		NewSetupAPI(s.SetupStore, s.AdminAuth).Register(mux)
 	}
