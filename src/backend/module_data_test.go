@@ -1,6 +1,9 @@
 package backend
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestParseModuleData_SkipsNullElementsAndParsesFlags(t *testing.T) {
 	raw := []byte(`{
@@ -96,5 +99,28 @@ func TestPreserveKnownDevicesForFailedModules_KeepsPreviousZoneIDs(t *testing.T)
 	}
 	if _, ok := merged["emodul/module-a/zone/1"]; ok {
 		t.Fatalf("did not expect unrelated previous module devices to be preserved")
+	}
+}
+
+func TestCachedModulesReturnsCopyWithinPollInterval(t *testing.T) {
+	api := &EmodulAPI{}
+	api.storeModules([]EmodulModule{{UDID: "module-1", Name: "Boiler"}})
+
+	cached, ok := api.cachedModules()
+	if !ok || len(cached) != 1 {
+		t.Fatalf("expected cached module inventory, got %#v", cached)
+	}
+	cached[0].Name = "Changed"
+
+	again, ok := api.cachedModules()
+	if !ok || again[0].Name != "Boiler" {
+		t.Fatalf("expected cache to remain unchanged, got %#v", again)
+	}
+
+	api.cacheMu.Lock()
+	api.modulesCachedAt = time.Now().Add(-time.Duration(defaultDataPollIntervalSec) * time.Second)
+	api.cacheMu.Unlock()
+	if _, ok := api.cachedModules(); ok {
+		t.Fatal("expected expired module inventory cache to miss")
 	}
 }

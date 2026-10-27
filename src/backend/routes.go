@@ -202,6 +202,8 @@ type EmodulAPI struct {
 
 	cacheMu         sync.RWMutex
 	moduleCache     map[string][]byte
+	modulesCache    []EmodulModule
+	modulesCachedAt time.Time
 	refreshInFlight map[string]bool
 	pollerOnce      sync.Once
 }
@@ -238,6 +240,9 @@ func (a *EmodulAPI) Status(ctx context.Context) (*Status, error) {
 }
 
 func (a *EmodulAPI) ListModules(ctx context.Context) ([]EmodulModule, error) {
+	if cached, ok := a.cachedModules(); ok {
+		return cached, nil
+	}
 	settings, err := a.loadSettings()
 	if err != nil {
 		return nil, err
@@ -258,6 +263,9 @@ func (a *EmodulAPI) ListModules(ctx context.Context) ([]EmodulModule, error) {
 			return nil, err
 		}
 		mods, err = client.ListModules(ctx, sess)
+	}
+	if err == nil {
+		a.storeModules(mods)
 	}
 	return mods, err
 }
@@ -580,6 +588,28 @@ func (a *EmodulAPI) cachedModuleData(moduleUDID string) ([]byte, bool) {
 	cloned := make([]byte, len(data))
 	copy(cloned, data)
 	return cloned, true
+}
+
+func (a *EmodulAPI) cachedModules() ([]EmodulModule, bool) {
+	if a == nil {
+		return nil, false
+	}
+	a.cacheMu.RLock()
+	defer a.cacheMu.RUnlock()
+	if len(a.modulesCache) == 0 || a.modulesCachedAt.IsZero() || time.Since(a.modulesCachedAt) >= a.currentDataPollInterval() {
+		return nil, false
+	}
+	return append([]EmodulModule(nil), a.modulesCache...), true
+}
+
+func (a *EmodulAPI) storeModules(modules []EmodulModule) {
+	if a == nil {
+		return
+	}
+	a.cacheMu.Lock()
+	a.modulesCache = append([]EmodulModule(nil), modules...)
+	a.modulesCachedAt = time.Now()
+	a.cacheMu.Unlock()
 }
 
 func (a *EmodulAPI) storeModuleData(moduleUDID string, data []byte) {
