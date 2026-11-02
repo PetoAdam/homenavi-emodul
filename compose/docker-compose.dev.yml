@@ -8,7 +8,7 @@ services:
       - PORT=8099
       - JWT_PUBLIC_KEY_PATH=/app/keys/jwt_public.pem
       - INTEGRATION_SETUP_PATH=/app/config/integration.setup.json
-      - MQTT_BROKER_URL=${MQTT_BROKER_URL:-mqtt://mosquitto:1883}
+      - MQTT_BROKER_URL=${MQTT_BROKER_URL:-mqtt://mqtt-broker:1883}
     volumes:
       - ${HOMENAVI_ROOT:?set HOMENAVI_ROOT}/keys/jwt_public.pem:/app/keys/jwt_public.pem:ro
       - ../config/integration.setup.json:/app/config/integration.setup.json
