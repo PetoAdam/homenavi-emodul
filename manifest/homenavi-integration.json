@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "emodul",
   "name": "eModul",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "publisher": "PetoAdam",
   "homepage": "https://github.com/PetoAdam/homenavi-emodul",
   "verified": false,
@@ -25,6 +25,7 @@
       "type": "integration.emodul.overview",
       "display_name": "eModul Overview",
       "description": "Zone overview with current, target, and humidity values.",
+      "default_size_hint": "sm",
       "entry": { "kind": "iframe", "url": "/widgets/overview/" },
       "requested_scopes": []
     },
@@ -32,6 +33,7 @@
       "type": "integration.emodul.configure",
       "display_name": "eModul Configure",
       "description": "Rename a zone and set target values.",
+      "default_size_hint": "sm",
       "entry": { "kind": "iframe", "url": "/widgets/configure/" },
       "requested_scopes": []
     }

@@ -86,7 +86,7 @@ a { color: inherit; }
 .hn-shell.hn-widget-shell {
   min-height: auto;
   max-width: none;
-  padding: 16px 18px;
+  padding: 10px 12px;
 }
 
 .hn-widget-surface {
@@ -846,3 +846,21 @@ a { color: inherit; }
     animation: none;
   }
 }
+
+.hn-widget-shell .hn-widget-surface,
+.hn-widget-shell .hn-zone-config,
+.hn-widget-shell .hn-zone-hero { gap: 8px; }
+.hn-widget-shell .hn-zone-hero__metrics { gap: 12px; flex-wrap: wrap; }
+.hn-widget-shell .hn-overview-row { gap: 4px; padding: 6px 0; }
+.hn-widget-shell .hn-overview-zone { gap: 6px; }
+.hn-widget-shell .hn-overview-zone__icon { width: 24px; height: 24px; border-radius: 6px; }
+.hn-widget-shell .hn-overview-zone__name { font-weight: 700; }
+.hn-widget-shell .hn-overview-stats { justify-content: flex-start; gap: 6px; padding-left: 0; flex-wrap: wrap; }
+.hn-widget-shell .hn-metric-pill { gap: 0 5px; }
+.hn-widget-shell .hn-metric-pill__label { letter-spacing: 0; }
+.hn-widget-shell .hn-metric-pill__value { font-size: 1rem; }
+.hn-widget-shell .hn-stepper { max-width: 100%; }
+.hn-widget-shell .hn-stepper__control { border-radius: 8px; }
+.hn-widget-shell .hn-stepper__btn { height: 36px; }
+.hn-widget-shell .hn-loading-state,
+.hn-widget-shell .hn-loading-message--static { min-height: 100px; }
