@@ -129,11 +129,12 @@ function OverviewWidget() {
   const { loading, status, zones } = useModuleZones();
 
   return (
-    <div className="hn-shell hn-widget-shell">
+    <div className="hn-shell hn-widget-shell hn-widget-shell--overview">
       <div className="hn-widget-surface hn-widget-pane">
         {loading ? <WidgetLoadingState /> : null}
         {!loading && status ? <WidgetStatusState message={status} /> : null}
-        {!loading && !status ? (
+        {!loading && !status && !zones.length ? <WidgetStatusState message="No zones available" /> : null}
+        {!loading && !status && zones.length ? (
           <div className="hn-overview-list hn-overview-list--airy">
             {zones.map((z) => {
               const ZoneIcon = getZoneIcon(z.icon_id);
@@ -216,10 +217,11 @@ function ConfigureWidget() {
   const zone = zones.find((z) => String(z.id) === String(selectedZoneId));
 
   return (
-    <div className="hn-shell hn-widget-shell">
+    <div className="hn-shell hn-widget-shell hn-widget-shell--configure">
       <div className="hn-widget-surface hn-widget-pane hn-stack">
         {loading ? <WidgetLoadingState /> : null}
         {!loading && status ? <WidgetStatusState message={status} /> : null}
+        {!loading && !status && !zones.length ? <WidgetStatusState message="No zones available" /> : null}
 
         {!loading && zones.length ? (
           <div className="hn-field-inline hn-widget-toolbar">
