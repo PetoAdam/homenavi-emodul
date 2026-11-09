@@ -84,9 +84,11 @@ a { color: inherit; }
 }
 
 .hn-shell.hn-widget-shell {
-  min-height: auto;
+  min-height: 100vh;
   max-width: none;
   padding: 10px 12px;
+  display: flex;
+  align-items: center;
 }
 
 .hn-widget-surface {
@@ -852,15 +854,26 @@ a { color: inherit; }
 .hn-widget-shell .hn-zone-hero { gap: 8px; }
 .hn-widget-shell .hn-zone-hero__metrics { gap: 12px; flex-wrap: wrap; }
 .hn-widget-shell .hn-overview-row { gap: 4px; padding: 6px 0; }
-.hn-widget-shell .hn-overview-zone { gap: 6px; }
+.hn-widget-shell .hn-overview-zone { gap: 6px; justify-content: center; }
 .hn-widget-shell .hn-overview-zone__icon { width: 24px; height: 24px; border-radius: 6px; }
 .hn-widget-shell .hn-overview-zone__name { font-weight: 700; }
-.hn-widget-shell .hn-overview-stats { justify-content: flex-start; gap: 6px; padding-left: 0; flex-wrap: wrap; }
+.hn-widget-shell .hn-overview-stats { justify-content: center; gap: 6px; padding-left: 0; flex-wrap: wrap; }
 .hn-widget-shell .hn-metric-pill { gap: 0 5px; }
 .hn-widget-shell .hn-metric-pill__label { letter-spacing: 0; }
 .hn-widget-shell .hn-metric-pill__value { font-size: 1rem; }
+.hn-widget-shell .hn-zone-controls-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; align-items: center; }
+.hn-widget-shell .hn-zone-toggle-stack { gap: 6px; }
+.hn-widget-shell .hn-hold-slot { display: none; width: auto; min-height: 0; }
+.hn-widget-shell .hn-hold-slot.is-active { display: block; }
+.hn-widget-shell .hn-zone-controls-grid > .hn-btn { grid-column: 1 / -1; }
 .hn-widget-shell .hn-stepper { max-width: 100%; }
-.hn-widget-shell .hn-stepper__control { border-radius: 8px; }
+.hn-widget-shell .hn-stepper__control { border-radius: 8px; grid-template-columns: 30px minmax(0, 1fr) auto 30px; }
+.hn-widget-shell .hn-stepper__unit { padding: 0 4px; }
 .hn-widget-shell .hn-stepper__btn { height: 36px; }
 .hn-widget-shell .hn-loading-state,
 .hn-widget-shell .hn-loading-message--static { min-height: 100px; }
+
+@media (max-width: 310px) {
+  .hn-widget-shell .hn-zone-controls-grid { grid-template-columns: 1fr; }
+  .hn-widget-shell .hn-zone-controls-grid > .hn-btn { grid-column: auto; }
+}

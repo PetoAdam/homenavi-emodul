@@ -50,7 +50,7 @@ func (s *Server) Routes() http.Handler {
 	}
 
 	assets := http.FileServer(http.FS(mustSub(s.WebFS, "assets")))
-	mux.Handle("/assets/", http.StripPrefix("/assets/", assets))
+	mux.Handle("/assets/", noCacheHeaders(http.StripPrefix("/assets/", assets)))
 
 	setupUI := http.FileServer(http.FS(mustSub(s.WebFS, "ui/setup")))
 	mux.Handle("/ui/setup/", noCacheHeaders(http.StripPrefix("/ui/setup/", setupUI)))
@@ -59,7 +59,7 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("/ui/", http.StripPrefix("/ui/", ui))
 
 	widgets := http.FileServer(http.FS(mustSub(s.WebFS, "widgets")))
-	mux.Handle("/widgets/", http.StripPrefix("/widgets/", widgets))
+	mux.Handle("/widgets/", noCacheHeaders(http.StripPrefix("/widgets/", widgets)))
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
