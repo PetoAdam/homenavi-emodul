@@ -185,9 +185,6 @@ func (b *EmodulDeviceBridge) syncAndReport(ctx context.Context, corrByDevice map
 func (b *EmodulDeviceBridge) syncOnce(ctx context.Context, corrByDevice map[string]string) error {
 	_, client, sess, err := b.bridgeSession(ctx)
 	if err != nil {
-		if errors.Is(err, errEmodulNotConfigured) {
-			b.clearKnownDevices("not configured")
-		}
 		return err
 	}
 	mods, err := client.ListModules(ctx, sess)
@@ -204,7 +201,7 @@ func (b *EmodulDeviceBridge) syncOnce(ctx context.Context, corrByDevice map[stri
 	}
 
 	current := make(map[string]zoneBridgeRef)
-	failedModules := map[string]struct{}{}
+	failedModules := 0
 	for _, mod := range mods {
 		moduleUDID := strings.TrimSpace(mod.UDID)
 		if moduleUDID == "" {
@@ -220,13 +217,13 @@ func (b *EmodulDeviceBridge) syncOnce(ctx context.Context, corrByDevice map[stri
 			data, err = client.GetModuleData(ctx, sess, moduleUDID)
 		}
 		if err != nil {
-			failedModules[moduleUDID] = struct{}{}
+			failedModules++
 			slog.Warn("emodul module sync failed", "module_udid", moduleUDID, "error", err)
 			continue
 		}
 		partial, err := ParseModuleData(data)
 		if err != nil {
-			failedModules[moduleUDID] = struct{}{}
+			failedModules++
 			slog.Warn("emodul module parse failed", "module_udid", moduleUDID, "error", err)
 			continue
 		}
@@ -238,9 +235,10 @@ func (b *EmodulDeviceBridge) syncOnce(ctx context.Context, corrByDevice map[stri
 		}
 	}
 
-	current = b.preserveKnownDevicesForFailedModules(current, failedModules)
-
-	b.reconcileKnownDevices(current)
+	missing := b.reconcileKnownDevices(current)
+	if missing > 0 || failedModules > 0 {
+		return fmt.Errorf("incomplete eModul sync: %d known zones missing, %d modules failed; keeping existing devices", missing, failedModules)
+	}
 	b.publishStatus("online", fmt.Sprintf("synced %d zones", len(current)))
 	return nil
 }
@@ -261,50 +259,22 @@ func (b *EmodulDeviceBridge) bridgeSession(ctx context.Context) (*EmodulSettings
 	return settings, client, sess, nil
 }
 
-func (b *EmodulDeviceBridge) reconcileKnownDevices(current map[string]zoneBridgeRef) {
-	b.mu.Lock()
-	previous := b.known
-	b.known = current
-	b.mu.Unlock()
-
-	for deviceID := range previous {
-		if _, ok := current[deviceID]; ok {
-			continue
-		}
-		b.publishRemoval(deviceID, "zone_removed")
-	}
-}
-
-func (b *EmodulDeviceBridge) preserveKnownDevicesForFailedModules(current map[string]zoneBridgeRef, failedModules map[string]struct{}) map[string]zoneBridgeRef {
-	if len(failedModules) == 0 {
-		return current
-	}
-	if current == nil {
-		current = make(map[string]zoneBridgeRef)
-	}
+func (b *EmodulDeviceBridge) reconcileKnownDevices(current map[string]zoneBridgeRef) int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	for deviceID, ref := range b.known {
-		if _, failed := failedModules[strings.TrimSpace(ref.ModuleUDID)]; !failed {
-			continue
+	missing := 0
+	for deviceID := range b.known {
+		if _, ok := current[deviceID]; !ok {
+			missing++
 		}
-		if _, exists := current[deviceID]; exists {
-			continue
-		}
-		current[deviceID] = ref
 	}
-	return current
-}
-
-func (b *EmodulDeviceBridge) clearKnownDevices(reason string) {
-	b.mu.Lock()
-	previous := b.known
-	b.known = map[string]zoneBridgeRef{}
-	b.mu.Unlock()
-	for deviceID := range previous {
-		b.publishRemoval(deviceID, reason)
+	if b.known == nil {
+		b.known = make(map[string]zoneBridgeRef)
 	}
-	b.publishStatus("degraded", reason)
+	for deviceID, ref := range current {
+		b.known[deviceID] = ref
+	}
+	return missing
 }
 
 func (b *EmodulDeviceBridge) publishZone(mod EmodulModule, zone ZoneElement, corr string) {
@@ -353,22 +323,6 @@ func (b *EmodulDeviceBridge) publishZone(mod EmodulModule, zone ZoneElement, cor
 	}
 	b.publishRetainedJSON(emodulMetadataTopicPrefix+deviceID, meta)
 	b.publishRetainedJSON(emodulStateTopicPrefix+deviceID, stateEnvelope)
-}
-
-func (b *EmodulDeviceBridge) publishRemoval(deviceID, reason string) {
-	if b == nil || b.mqttClient == nil || strings.TrimSpace(deviceID) == "" {
-		return
-	}
-	b.publishRaw(emodulMetadataTopicPrefix+deviceID, nil, true)
-	b.publishRaw(emodulStateTopicPrefix+deviceID, nil, true)
-	b.publishJSON(emodulEventTopicPrefix+deviceID, false, map[string]any{
-		"schema":    emodulBridgeSchema,
-		"type":      "event",
-		"event":     "device_removed",
-		"device_id": deviceID,
-		"data":      map[string]any{"reason": reason},
-		"ts":        time.Now().UnixMilli(),
-	})
 }
 
 func (b *EmodulDeviceBridge) publishHello() {

@@ -12,6 +12,12 @@ It implements:
 - A manifest schema validator (`cmd/validate-manifest`)
 - A GitHub Actions “verification” workflow (tests + gosec + manifest validation + docker build)
 
+The bridge never automatically deletes HomeNavi devices when eModul credentials or
+inventory are missing: cloud responses may be incomplete during outages. Missing
+known zones are reported as a degraded sync; permanently removed zones should be
+deleted manually in HomeNavi. Restart the integration afterwards to clear the
+in-memory missing-zone warning.
+
 ## Release security gates
 
 - `verify.yml` is the main gate (manifest/structure checks, tests, `go vet`, `gosec`, Docker build, and Trivy scan).
